@@ -1,0 +1,37 @@
+version: '3.8'
+services:
+  antink-server:
+    build:
+      context: .
+      dockerfile: Dockerfile  
+    volumes:
+      - it24_host:/it24_host
+      - antink_mount:/antink_mount
+      - antink-logs:/var/log
+    privileged: true  # needed for fuse
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse:/dev/fuse
+    command: /app/antink_fuse -f /antink_mount
+
+  antink-logger:
+    image: ubuntu:latest
+    volumes:
+      - antink-logs:/var/log
+    command: sh -c "while [ ! -f /var/log/it24.log ]; do sleep 1; done && tail -f /var/log/it24.log"
+
+volumes:
+  it24_host:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./it24_host  # directory host buat it24(file asli)
+  antink_mount:
+  antink-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./antink_logs  # directory host buat log
