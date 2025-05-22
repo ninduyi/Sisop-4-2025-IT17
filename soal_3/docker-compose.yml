@@ -1,0 +1,26 @@
+version: '3.9'
+services:
+  antink-server:
+    build:
+      context: .
+      dockerfile: Dockerfile  
+    volumes:
+      - ./it24_host:/it24_host
+      - ./antink_mount:/antink_mount
+      - ./antink-logs:/var/log
+    privileged: true  
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+
+  antink-logger:
+    depends_on:
+      - antink-server
+    image: alpine
+    volumes:
+      - ./antink-logs:/var/log
+    command: sh -c "while [ ! -f /var/log/it24.log ]; do sleep 1; done; tail -f /var/log/it24.log"
