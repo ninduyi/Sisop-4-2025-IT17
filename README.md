@@ -58,6 +58,13 @@ Suatu hari, saat di Tethys' Deep, Shorekeeper menemukan sebuah anomali yang baru
     - Menulis log dengan informasi konversi.
 
 
-## Jawaban
+## Penjelasan
 
-## Dokumentasi
+## Dokumentasi Revisi
+![](assets/struktur%20akhir.png)
+
+![](assets/isi-log.png)
+
+![](assets/hasil%20image%201.png)
+
+![](assets/hasil%20image%202.png)
