@@ -691,3 +691,414 @@ static int baymax_unlink(const char *path) {
 - Semua fragmen dari file yang diminta (misalnya Baymax.jpeg) dihapus.
 - Fungsi ini akan menghapus setiap fragmen satu per satu dan mencatatnya di dalam log.
 
+# S̵̙͕̀̃o̯̱̊͊͢ā̤̓̍͘l̙͖̑̾ͣ 3̤̰̺̂̃ 
+_**Oleh : Muhammad Khairul Yahya**_
+
+## Deskripsi Soal
+Nafis dan Kimcun merupakan dua mahasiswa anomali😱 yang paling tidak tahu sopan santun dan sangat berbahaya di antara angkatan 24. Maka dari itu, Pujo sebagai komting yang baik hati dan penyayang😍, memutuskan untuk membuat sebuah sistem pendeteksi kenakalan bernama Anti Napis Kimcun (AntiNK) untuk melindungi file-file penting milik angkatan 24. Pujo pun kemudian bertanya kepada Asisten bagaimana cara membuat sistem yang benar, para asisten pun merespon **(Author: Rafa / kookoon)**
+
+a. Sistem AntiNK dibuat menggunakan **Docker** yang menjalankan **FUSE** dalam container terisolasi. Sistem ini menggunakan `docker-compose` untuk mengelola dua container:
+
+- `antink-server`: Menjalankan fungsi FUSE.
+- `antink-logger`: Memantau log secarareal-time. Komponen tambahan meliputi:
+- `it24_host`: Bind mount untuk menyimpanfile asli.
+- `antink_mount`: Titik mount FUSE.
+- `antink-logs`: Bind mount untuk menyimpanlog.
+
+b. Sistem harus mendeteksi file dengan kata kunci **"nafis"** atau **"kimcun"** dan membalikkan nama file tersebut saat ditampilkan. Saat file berbahaya terdeteksi, sistem mencatat peringatan ke log.
+
+Contoh: `docker exec [container-name] ls /antink_mount`
+
+Output: `test.txt vsc.sifan txt.nucmik`
+
+c. File teks normal (`.txt`) dienkripsi menggunakan **ROT13** saat dibaca, sedangkan file teks berbahaya tidak dienkripsi.
+
+Contoh: `docker exec [container-name] cat /antink_mount/test.txt`
+
+Output: `enkripsi teks asli`
+
+d. Semua aktivitas dicatat ke dalam file log `/var/log/it24.log`, yang dimonitor secara real-time oleh container `antink-logger`.
+
+e. Semua perubahan file hanya terjadi di dalam container server, sehingga tidak memengaruhi direktori host.
+
+## Penjelasan Kode
+
+**File 1: `docker-compose.yml`**
+>  **Tujuan**: File docker-compose.yml mengatur dua container (antink-server dan antink-logger) serta konfigurasi volume, izin, dan ketergantungan untuk mendukung sistem AntiNK.
+
+- **Kode:**
+```yaml
+version: '3.9'
+services:
+  antink-server:
+    build:
+      context: .
+      dockerfile: Dockerfile  
+    volumes:
+      - ./it24_host:/it24_host
+      - ./antink_mount:/antink_mount
+      - ./antink-logs:/var/log
+    privileged: true  
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+
+  antink-logger:
+    depends_on:
+      - antink-server
+    image: alpine
+    volumes:
+      - ./antink-logs:/var/log
+    command: sh -c "while [ ! -f /var/log/it24.log ]; do sleep 1; done; tail -f /var/log/it24.log"
+```
+**Fungsi dan Logika**
+
+- **antink-server:**
+
+  - `Build`: Menggunakan Dockerfile di direktori saat ini untuk membangun image container.
+  - `Volumes`:
+  - `./it24_host:/it24_host`: Menghubungkan direktori host `it24_host` ke `/it24_host` di container untuk menyimpan file asli.
+  - `./antink_mount:/antink_mount`: Menghubungkan direktori host `antink_mount` ke `/antink_mount` sebagai titik mount FUSE.
+  - `./antink-logs:/var/log`: Menghubungkan direktori host `antink-logs` ke `/var/log` untuk menyimpan log.
+
+- **Izin dan Kapabilitas**:
+    - `privileged: true`: Memberikan izin tingkat tinggi untuk operasi FUSE.
+    - `cap_add: SYS_ADMIN`: Menambahkan kapabilitas sistem admin untuk mendukung FUSE.
+    - `devices: /dev/fuse`: Mengekspos perangkat FUSE ke container.
+    - `security_opt: apparmor:unconfined`: Menonaktifkan AppArmor untuk kompatibilitas FUSE.
+
+- **Restart Policy**: `unless-stopped` memastikan container berjalan kembali kecuali dihentikan secara eksplisit.
+
+- **antink-logger:**
+    - **Depends On**: Menunggu antink-server mulai sebelum menjalankan container ini.
+    - **Image**: Menggunakan image alpine yang ringan untuk efisiensi.
+    - **Volume**: Berbagi mount antink-logs:/var/log untuk mengakses file log.
+    - **Command**: Menjalankan perintah shell yang menunggu file /var/log/it24.log ada, lalu memantau file tersebut secara real-time dengan tail -f.
+
+**Peran dalam Sistem**
+
+File ini mengatur infrastruktur Docker untuk AntiNK, memastikan `antink-server` menjalankan filesystem FUSE dan `antink-logger` memantau log. Bind mounts memungkinkan penyimpanan file asli dan log yang persisten di host, sementara izin khusus mendukung operasi FUSE yang membutuhkan akses kernel.
+
+**File 2:`antink.c`**
+>  **Tujuan**: File `antink.c `mengimplementasikan filesystem FUSE yang mendeteksi file berbahaya, membalik nama file, mengenkripsi isi file teks normal dengan ROT13, dan mencatat aktivitas ke log.
+
+**☆꧁༒𝗞𝗼𝗱𝗲༒꧂☆:**
+
+```c
+#define FUSE_USE_VERSION 30
+#include <fuse.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <time.h>
+
+static const char *source_dir = "/it24_host";
+static const char *log_file = "/var/log/it24.log";
+
+// Mapping
+#define MAX_FILES 100
+static struct {
+    char reversed[256];
+    char original[256];
+} name_mapping[MAX_FILES];
+static int mapping_count = 0;
+
+// logging
+void log_event(const char *event, const char *details) {
+    int fd = open(log_file, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd == -1) return;
+
+    time_t now = time(NULL);
+    char *time_str = ctime(&now);
+    time_str[strlen(time_str) - 1] = '\0'; // remove newline
+
+    char log_entry[512];
+    snprintf(log_entry, sizeof(log_entry), "[%s] %s: %s\n", time_str, event, details);
+    write(fd, log_entry, strlen(log_entry));
+    close(fd);
+}
+
+// detect dangerous files
+int is_dangerous(const char *name) {
+    return (strstr(name, "nafis") != NULL || strstr(name, "kimcun") != NULL);
+}
+
+void reverse_name(const char *name, char *reversed) {
+    int len = strlen(name);
+    for (int i = 0; i < len; i++) {
+        reversed[i] = name[len - 1 - i];
+    }
+    reversed[len] = '\0';
+}
+
+const char* get_original_name(const char *reversed) {
+    for (int i = 0; i < mapping_count; i++) {
+        if (strcmp(name_mapping[i].reversed, reversed) == 0) {
+            return name_mapping[i].original;
+        }
+    }
+    return reversed;
+}
+
+void rot13(char *text, int len) {
+    for (int i = 0; i < len; i++) {
+        if ((text[i] >= 'a' && text[i] <= 'z')) {
+            text[i] = 'a' + (text[i] - 'a' + 13) % 26;
+        } else if ((text[i] >= 'A' && text[i] <= 'Z')) {
+            text[i] = 'A' + (text[i] - 'A' + 13) % 26;
+        }
+    }
+}
+
+// getattr (implementasi fuse)
+static int antink_getattr(const char *path, struct stat *stbuf) {
+    char real_path[256];
+    snprintf(real_path, sizeof(real_path), "%s%s", source_dir, path);
+
+    int res = lstat(real_path, stbuf);
+    if (res == -1)  return -errno;
+    return 0;
+}
+
+// readdir (implementasi fuse)
+static int antink_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
+    char real_path[256];
+    snprintf(real_path, sizeof(real_path), "%s%s", source_dir, path);
+    printf("Readdir: Checking path %s (real_path: %s)\n", path, real_path);
+
+    DIR *dp = opendir(real_path);
+    if (dp == NULL) {
+        printf("Failed to open directory: %s (errno: %d)\n", real_path, errno);
+        return -errno;
+    }
+
+    struct dirent *de;
+    while ((de = readdir(dp)) != NULL) {
+        struct stat st;
+        memset(&st, 0, sizeof(st));
+        st.st_ino = de->d_ino;
+        st.st_mode = de->d_type << 12;
+
+        char display_name[256];
+        if (is_dangerous(de->d_name)) {
+            reverse_name(de->d_name, display_name);
+            char log_msg[256];
+            snprintf(log_msg, sizeof(log_msg), "Anomaly detected in file: /%s", de->d_name);
+            log_event("ALERT", log_msg);
+            printf("Reversed %s to %s\n", de->d_name, display_name);
+        } else {
+            strcpy(display_name, de->d_name);
+        }
+        if (filler(buf, display_name, &st, 0)) break;
+    }
+    closedir(dp);
+    printf("Readdir completed for %s\n", path);
+    return 0;
+}
+
+// open (implementasi fuse)
+static int antink_open(const char *path, struct fuse_file_info *fi) {
+   char real_path[256];
+   snprintf(real_path, sizeof(real_path), "%s%s", source_dir, path);
+
+   int fd = open(real_path, fi->flags);
+   if (fd == -1) return -errno;
+
+   fi->fh = fd;
+   return 0;
+}
+
+// read (implementasi fuse)
+static int antink_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+    char real_path[256];
+    snprintf(real_path, sizeof(real_path), "%s%s", source_dir, path);
+    printf("Reading file: %s (real_path: %s)\n", path, real_path);
+
+    int fd = fi->fh;
+    if (fd == -1) {
+        printf("Invalid file handle for %s\n", path);
+        return -errno;
+    }
+
+    lseek(fd, offset, SEEK_SET);
+    int res = read(fd, buf, size);
+    if (res == -1) {
+        printf("Read failed for %s (errno: %d)\n", path, errno);
+        return -errno;
+    }
+
+    int is_text = (strstr(path, ".txt") != NULL);
+    int is_danger = is_dangerous(path);
+
+    if (is_text, !is_danger) {
+        rot13(buf, res);
+        char log_msg[256];
+        snprintf(log_msg, sizeof(log_msg), "File %s has been encrypted", path);
+        log_event("ENCRYPT", log_msg);
+        printf("Encrypted %s\n", path);
+    } else if (is_danger) {
+        char log_msg[256];
+        snprintf(log_msg, sizeof(log_msg), "File %s has been reversed", path);
+        log_event("REVERSE", log_msg);
+        printf("Reversed content for %s\n", path);
+    }
+    printf("Read %d bytes from %s\n", res, path);
+    return res;
+}
+
+// operasi FUSE
+static struct fuse_operations antink_oper = {
+    .getattr = antink_getattr,
+    .readdir = antink_readdir,
+    .open = antink_open,
+    .read = antink_read,
+};
+
+int main(int argc, char *argv[]) {
+    umask(0);
+    printf("Starting FUSE filesystem at %s...\n", argv[1]);
+    int res = fuse_main(argc, argv, &antink_oper, NULL);
+    printf("fuse_main returned: %d\n", res);
+    if (res == 0) {
+        printf("FUSE filesystem mounted successfully\n");
+    } else {
+        printf("FUSE filesystem failed to mount\n");
+    }
+    return res;
+}
+```
+**Fungsi dan Logika**
+
+- **Konfigurasi FUSE**:
+    - Menggunakan FUSE versi 30 dan mendefinisikan operasi FUSE (`getattr`, `readdir`, `open`, `read`) untuk mengelola filesystem.
+    - Filesystem dimount di `/antink_mount` melalui argumen `fuse_main`.
+- **Fungsi Support**:
+    - `log_event`: Mencatat aktivitas ke /var/log/it24.log dengan format `[timestamp] [event]: [details]`.
+    - `is_dangerous`: Memeriksa apakah nama file mengandung "nafis" atau "kimcun".
+    - `reverse_name`: Membalikkan nama file (misalnya, `nafis.txt` menjadi `txt.sifan`).
+    - `get_original_name`: Mengembalikan nama asli dari nama yang sudah dibalik (meskipun tidak digunakan secara efektif dalam kode ini).
+    - `rot13`: Mengenkripsi teks dengan ROT13, menggeser huruf sebanyak 13 posisi dalam alfabet.
+
+- **Operasi FUSE**:
+    - **antink_getattr**: Mengambil metadata file (misalnya, izin, ukuran) dari file asli di `/it24_host`.
+    - **antink_readdir**: Menampilkan daftar file dalam direktori, membalik nama file berbahaya, dan mencatat anomali ke log.
+    - **antink_open**: Membuka file di `/it24_host` dan menyimpan file descriptor.
+    - **antink_read**: Membaca isi file, menerapkan ROT13 pada file teks normal (`.txt`) yang bukan berbahaya, dan mencatat aktivitas ke log. File berbahaya dibaca tanpa modifikasi.
+
+- **Mapping Nama File**: Menyimpan pasangan nama asli dan nama terbalik dalam array `name_mapping` (meskipun tidak sepenuhnya digunakan dalam kode ini).
+
+**Peran dalam Sistem**
+
+File ini adalah inti dari sistem AntiNK, mengimplementasikan filesystem FUSE yang:
+
+- Menampilkan nama file berbahaya dalam bentuk terbalik (misalnya, `docker exec antink-server` & `ls /antink_mount` menunjukkan `txt.sifa`n untuk `nafis.txt`).
+
+- Mengenkripsi file teks normal dengan ROT13 saat dibaca (misalnya, `cat /antink_mount/test.txt` menghasilkan teks terenkripsi).
+
+- Mencatat semua aktivitas (deteksi anomali, enkripsi) ke log.
+
+- Beroperasi di atas direktori `/it24_host`, memastikan file asli tidak berubah.
+
+**File 3: `Dockerfile`**
+> **Tujuan:** File `Dockerfile` mendefinisikan cara membangun container `antink-server`, menyiapkan lingkungan, dan mengompilasi program FUSE.
+
+**•.¸♡ 𝗞𝗼𝗱𝗲 ♡¸.•:**
+```dockerfile
+FROM ubuntu:latest
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    make \
+    fuse \
+    libfuse-dev \
+    pkg-config \
+    nano \
+    vim \
+    && apt-get clean
+
+WORKDIR /app
+
+COPY antink.c .
+
+RUN gcc -Wall antink.c `pkg-config fuse --cflags --libs` -o antink  
+
+RUN mkdir -p /it24_host /antink_mount /var/log
+
+CMD ["./antink", "-f", "/antink_mount"]
+```
+
+**Fungsi dan Logika:**
+
+- **Base Image**: Menggunakan `ubuntu:latest` sebagai basis image.
+
+- **Environment**: Mengatur `DEBIAN_FRONTEND=noninteractive` untuk menghindari prompt interaktif saat instalasi paket.
+
+- **Instalasi Paket**: Menginstal `gcc`, `make`, `fuse`, `libfuse-dev`, `pkg-config`, `nano`, dan `vim` untuk mendukung pengembangan dan FUSE.
+
+- **Working Directory**: Mengatur `/app` sebagai direktori kerja.
+
+- **Kompilasi**: Menyalin `antink.c` dan mengompilasinya menjadi executable antink dengan library FUSE.
+
+- **Pembuatan Direktori**: Membuat direktori `/it24_host`, `/antink_mount`, dan `/var/log`.
+
+- **Perintah**: Menjalankan program FUSE dalam mode foreground (`-f`) di /`antink_mount`.
+
+**Peran dalam Sistem**
+
+`Dockerfile` menciptakan lingkungan container untuk `antink-server`, memastikan semua dependensi terinstal, mengompilasi `antink.c`, dan menyiapkan direktori yang diperlukan. Perintah `CMD` memulai filesystem FUSE saat container dijalankan.
+
+**Alur Eksekusi**
+
+1. **Persiapan**:
+    - `docker-compose.yml` mengatur dua container: `antink-server` untuk FUSE dan `antink-logger` untuk pemantauan log.
+
+    - `Dockerfile` membangun image untuk `antink-server`, mengompilasi `antink.c`, dan menyiapkan lingkungan.
+
+    -  Bind mounts menghubungkan direktori host (`it24_host`, `antink_mount`, `antink-logs`) ke container.
+
+2. **Operasi Filesystem**:
+    - Filesystem FUSE dimount di `/antink_mount` oleh `antink.c`.
+
+    - Saat menjalankan `docker exec antink-server ls /antink_mount`, file berbahaya (mengandung "nafis" atau "kimcun") ditampilkan dengan nama terbalik (misalnya, `txt.sifan` untuk `nafis.txt`).
+
+    - Saat menjalankan `docker exec antink-server cat /antink_mount/test`.txt, file teks normal dienkripsi dengan ROT13, sedangkan file berbahaya dibaca tanpa perubahan.
+
+    - Semua aktivitas dicatat di `/var/log/it24.log`.
+
+3. **Pemantauan Log**:
+    -  Container `antink-logger` memantau file log secara real-time menggunakan `tail -f`.
+
+4. **Isolasi**:
+    - Docker memastikan semua operasi filesystem terjadi di dalam container, tanpa memengaruhi file asli di host.
+
+## Dokumentasi dan Revisi
+
+- **Revisi:**
+> *Untuk isi dari `nafis.*` & `kimcun.*` tidak perlu di enkripsi jika dieksekusi perintah `cat`.*
+
+- **Pembalikan nama untuk perintah `ls /antink_mount`**:
+
+![image alt]()
+
+- **Bagian Revisi:**
+
+  - **Sebelum Revisi:**
+  ![image alt]()
+
+  - **ཧᜰ꙰ꦿ➢𝕾𝖊𝖙𝖊𝖑𝖆𝖍 𝕽𝖊𝖛𝖎𝖘𝖎༒**:
+  ![image alt]()
+
+- **Output untuk catatan log file `/var/log/it24.log`:
+
+![image alt]()
+
