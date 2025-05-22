@@ -1083,22 +1083,32 @@ CMD ["./antink", "-f", "/antink_mount"]
 
 ## Dokumentasi dan Revisi
 
+- **Susunan File untuk persiapan sistem Dockerfile, setelah di build:**
+  ![image alt](https://github.com/ninduyi/Sisop-4-2025-IT17/blob/ef65eeca98c879f3a00a616fe4870b00b1420474/assets/Screenshot%202025-05-22%20223528.png)
+**Penjelasan:**
+- Untuk kata yang diblok hijau, merupakan `directory`.
+- yang lain merupakan file biasa, bukan file `.execute` maupun `directory`.
+  
 - **Revisi:**
 > *Untuk isi dari `nafis.*` & `kimcun.*` tidak perlu di enkripsi jika dieksekusi perintah `cat`.*
 
 - **Pembalikan nama untuk perintah `ls /antink_mount`**:
 
-![image alt]()
+![image alt](https://github.com/ninduyi/Sisop-4-2025-IT17/blob/ef65eeca98c879f3a00a616fe4870b00b1420474/assets/Screenshot%202025-05-22%20223703.png)
 
 - **Bagian Revisi:**
 
   - **Sebelum Revisi:**
-  ![image alt]()
-
+  ![image alt](https://github.com/ninduyi/Sisop-4-2025-IT17/blob/ef65eeca98c879f3a00a616fe4870b00b1420474/assets/Screenshot%202025-05-21%20212804.png)
+**Penjelasan**:
+1. Untuk output other.txt (selain ada "nafis" & "kimcun"), sudah terenkripsi rot13.
+2. Namun untuk otuput `kimcun.txt`, seharusnya tidak perlu dienkripsi rot13.
+3. Selain itu, `nafis.cssv` sudah benar outputnya.
+   
   - **ཧᜰ꙰ꦿ➢𝕾𝖊𝖙𝖊𝖑𝖆𝖍 𝕽𝖊𝖛𝖎𝖘𝖎༒**:
-  ![image alt]()
+  ![image alt](https://github.com/ninduyi/Sisop-4-2025-IT17/blob/ef65eeca98c879f3a00a616fe4870b00b1420474/assets/Screenshot%202025-05-21%20212655.png)
 
 - **Output untuk catatan log file `/var/log/it24.log`:
 
-![image alt]()
+![image alt](https://github.com/ninduyi/Sisop-4-2025-IT17/blob/ef65eeca98c879f3a00a616fe4870b00b1420474/assets/Screenshot%202025-05-22%20223555.png)
 
